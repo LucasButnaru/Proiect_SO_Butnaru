@@ -86,26 +86,40 @@ void log_action(const char *district_id, const char *action) {
     close(fd);
 }
 
-// Creează structura districtului (director + symlink)
+// Creează structura districtului (director + symlink + fisiere)
 void setup_district(const char *district_id) {
     struct stat st;
+    
+    // 1. Creare director
     if (stat(district_id, &st) == -1) {
         mkdir(district_id, 0750); // rwxr-x---
     }
 
+    // 2. Creare reports.dat
     char report_path[MAX_PATH];
     snprintf(report_path, sizeof(report_path), "%s/reports.dat", district_id);
-    
-    // Creare reports.dat gol dacă nu există
     if (stat(report_path, &st) == -1) {
         int fd = open(report_path, O_CREAT | O_WRONLY, 0664);
         if (fd >= 0) close(fd);
+        chmod(report_path, 0664); // Setare explicita
     }
 
-    // Creare symlink
+    // 3. Creare district.cfg
+    char config_path[MAX_PATH];
+    snprintf(config_path, sizeof(config_path), "%s/district.cfg", district_id);
+    if (stat(config_path, &st) == -1) {
+        int fd = open(config_path, O_CREAT | O_WRONLY, 0640);
+        if (fd >= 0) {
+            const char *default_cfg = "severity_threshold=2\n";
+            write(fd, default_cfg, strlen(default_cfg));
+            close(fd);
+        }
+        chmod(config_path, 0640); // Setare explicita
+    }
+
+    // 4. Creare symlink
     char symlink_name[MAX_PATH];
     snprintf(symlink_name, sizeof(symlink_name), "active_reports-%s", district_id);
-    
     struct stat lst;
     if (lstat(symlink_name, &lst) == -1) {
         symlink(report_path, symlink_name);
@@ -118,25 +132,46 @@ void cmd_add(const char *district_id) {
     char report_path[MAX_PATH];
     snprintf(report_path, sizeof(report_path), "%s/reports.dat", district_id);
 
+    // Verificam permisiunile
     if (!check_access(report_path, 0, 1, 0)) return;
 
     int fd = open(report_path, O_WRONLY | O_APPEND);
     if (fd < 0) { perror("Eroare deschidere reports.dat"); return; }
 
-    Report r;
-    r.id = (int)time(NULL) % 10000; // ID generat simplu
-    strncpy(r.inspector, current_user, MAX_STRING);
-    r.lat = 45.75f; r.lon = 21.23f; // Mock GPS
-    strcpy(r.category, "road");
-    r.severity = 2;
-    r.timestamp = time(NULL);
-    strcpy(r.description, "Groapa pe carosabil");
+    // Liste pentru generarea de date aleatoare
+    const char* categorii[] = {"road", "sanitation", "lighting", "parks", "water"};
+    const char* descrieri[] = {
+        "Groapa pe carosabil", 
+        "Gunoi neridicat pe trotuar", 
+        "Stalp de iluminat defect", 
+        "Banca rupta in parc", 
+        "Scurgere de apa pe strada"
+    };
+    
+    // Alegem un index la intamplare (între 0 și 4)
+    int rand_idx = rand() % 5;
 
+    Report r;
+    r.id = rand() % 100000; // ID aleatoriu între 0 și 99999
+    strncpy(r.inspector, current_user, MAX_STRING);
+    
+    // Generam coordonate GPS aleatoare (simuland o zona apropiata de Timisoara)
+    r.lat = 45.70f + ((float)rand() / RAND_MAX) * 0.1f; 
+    r.lon = 21.20f + ((float)rand() / RAND_MAX) * 0.1f;
+    
+    // Atribuim valorile aleatoare alese
+    strcpy(r.category, categorii[rand_idx]);
+    r.severity = (rand() % 5) + 1; // Severitate între 1 și 5
+    r.timestamp = time(NULL);      // Momentul adaugarii raportului
+    strcpy(r.description, descrieri[rand_idx]);
+
+    // Scriem in fisier
     write(fd, &r, sizeof(Report));
     close(fd);
 
     log_action(district_id, "add_report");
-    printf("Raport adaugat cu succes in districtul %s.\n", district_id);
+    printf("Raport adaugat cu succes in districtul %s (ID: %d | Cat: %s | Sev: %d).\n", 
+           district_id, r.id, r.category, r.severity);
 }
 
 // Comanda: list
@@ -349,6 +384,8 @@ int main(int argc, char *argv[]) {
         printf("Utilizare: %s --role <role> --user <user> --<command> <args...>\n", argv[0]);
         return 1;
     }
+
+    srand(time(NULL));
 
     // Initializare variabile globale
     memset(current_role, 0, sizeof(current_role));
