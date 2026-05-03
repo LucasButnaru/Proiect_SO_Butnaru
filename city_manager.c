@@ -7,6 +7,8 @@
 #include <sys/types.h>
 #include <time.h>
 #include <errno.h>
+#include <signal.h>
+#include <sys/wait.h>
 
 #define MAX_PATH 256
 #define MAX_STRING 64
