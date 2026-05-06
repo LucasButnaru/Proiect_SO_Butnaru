@@ -7,13 +7,13 @@
 #include <fcntl.h>
 #include <string.h>
 
-// Variabilă globală pentru a ține programul activ
+// Variabila globala pentru a tine programul activ
 volatile sig_atomic_t keep_running = 1;
 
 // Handler pentru SIGINT (Ctrl+C)
 void handle_sigint(int sig) {
     keep_running = 0;
-    // Semnalam iesirea; printf nu e 100% sigur in handlere de semnal, dar e cerut pentru afișare
+    // Semnalam iesirea
     write(STDOUT_FILENO, "\n[Monitor] S-a primit SIGINT. Se inchide programul...\n", 55);
 }
 
@@ -23,7 +23,7 @@ void handle_sigusr1(int sig) {
 }
 
 int main() {
-    // 1. Configurarea handler-elor folosind DOAR sigaction() (regula din PDF)
+    // Configurarea handler-elor folosind DOAR sigaction() 
     struct sigaction sa_int;
     sa_int.sa_handler = handle_sigint;
     sigemptyset(&sa_int.sa_mask);
@@ -36,7 +36,7 @@ int main() {
     sa_usr1.sa_flags = 0; 
     sigaction(SIGUSR1, &sa_usr1, NULL);
 
-    // 2. Crearea fisierului .monitor_pid și scrierea PID-ului
+    // Crearea fisierului .monitor_pid și scrierea PID-ului
     int fd = open(".monitor_pid", O_CREAT | O_WRONLY | O_TRUNC, 0644);
     if (fd < 0) {
         perror("Eroare la crearea .monitor_pid");
@@ -50,14 +50,19 @@ int main() {
 
     printf("[Monitor] Pornit cu succes cu PID %d. Astept semnale...\n", getpid());
 
-    // 3. Bucla infinita de asteptare a semnalelor
+    // Bucla infinita de asteptare a semnalelor
     while (keep_running) {
-        pause(); // Pune procesul "la somn" pana primeste un semnal (evită consumul de CPU)
+        pause(); // Pune procesul "la somn" pana primeste un semnal (evita consumul de CPU)
     }
 
-    // 4. Cleanup la inchidere (SIGINT)
+    // Cleanup la inchidere (SIGINT)
     unlink(".monitor_pid");
     printf("[Monitor] Fisierul .monitor_pid a fost sters. La revedere!\n");
-
     return 0;
 }
+
+
+
+
+
+

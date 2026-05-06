@@ -171,7 +171,37 @@ void cmd_add(const char *district_id) {
     write(fd, &r, sizeof(Report));
     close(fd);
 
-    log_action(district_id, "add_report");
+    // --- FAZA 2: Notificare Monitor ---
+    int monitor_pid = -1;
+    int notification_success = 0;
+
+    // Incercam sa citim PID-ul monitorului
+    int pid_fd = open(".monitor_pid", O_RDONLY);
+    if (pid_fd >= 0) {
+        char pid_buf[32];
+        memset(pid_buf, 0, sizeof(pid_buf));
+        ssize_t bytes_read = read(pid_fd, pid_buf, sizeof(pid_buf) - 1);
+    if (bytes_read > 0) {
+        monitor_pid = atoi(pid_buf);
+        // Trimitem semnalul SIGUSR1
+        if (kill(monitor_pid, SIGUSR1) == 0) {
+            notification_success = 1;
+            }
+        }
+        close(pid_fd);
+    }
+
+// Scriem in log rezultatul notificarii
+    char log_msg[256];
+    if (notification_success) {
+        snprintf(log_msg, sizeof(log_msg), "add_report (Monitor PID %d notified)", monitor_pid);
+    } else {
+        snprintf(log_msg, sizeof(log_msg), "add_report (Monitor could not be informed)");
+    }
+
+    log_action(district_id, log_msg);
+    printf("Raport adaugat in %s (ID: %d). Notificare monitor: %s\n",
+        district_id, r.id, notification_success ? "SUCCES" : "ESEC");
     printf("Raport adaugat cu succes in districtul %s (ID: %d | Cat: %s | Sev: %d).\n", 
            district_id, r.id, r.category, r.severity);
 }
@@ -379,6 +409,47 @@ void cmd_filter(int argc, char *argv[], int start_arg_idx) {
     log_action(district_id, "filter");
 }
 
+// Comanda: remove_district (Phase 2 - fork & exec)
+
+void cmd_remove_district(const char *district_id) {
+    if (strcmp(current_role, "manager") != 0) {
+        printf("Eroare: Doar managerii pot sterge districte intregi.\n");
+        return;
+    }
+
+    // 1. Stergem link-ul simbolic cu unlink()
+    char symlink_name[MAX_PATH];
+    snprintf(symlink_name, sizeof(symlink_name), "active_reports-%s", district_id);
+    unlink(symlink_name);
+
+    printf("Pregatire stergere director '%s'...\n", district_id);
+
+    // 2. Creare proces copil
+        pid_t pid = fork();
+
+    if (pid < 0) {
+        perror("Eroare la fork()");
+    return;
+    }
+
+    if (pid == 0) {
+    // Apelam utilitarul 'rm -rf' extern 
+    execlp("rm", "rm", "-rf", district_id, NULL);
+
+    // Daca execlp pica, procesul ajunge aici
+    perror("Eroare la executia rm");
+    exit(1);
+
+    } else {
+
+    int status;
+    waitpid(pid, &status, 0); // Asteptam sa termine copilul comanda de stergere
+    printf("Districtul '%s' a fost sters complet de pe disc.\n", district_id);
+    }
+}
+
+
+
 // Functia main cu parsarea argumentelor
 int main(int argc, char *argv[]) {
     // Verificam numărul minim de argumente pentru a avea role, user și o comandă
@@ -413,7 +484,10 @@ int main(int argc, char *argv[]) {
         
     } else if (strcmp(command, "--remove_report") == 0 && argc >= 8) {
         cmd_remove(argv[6], atoi(argv[7]));
-        
+
+    } else if (strcmp(command, "--remove_district") == 0 && argc >= 7) {
+        cmd_remove_district(argv[6]); 
+
     } else if (strcmp(command, "--filter") == 0 && argc >= 8) {
         // argc >= 8 ne asigura ca avem districtul (argv[6]) și MACAR o condiție (argv[7])
         // Trimitem argc și argv la functie pentru a parcurge restul conditiilor (argv[7], argv[8], etc.)
