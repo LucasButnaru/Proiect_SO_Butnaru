@@ -88,7 +88,7 @@ void log_action(const char *district_id, const char *action) {
     close(fd);
 }
 
-// Creează structura districtului (director + symlink + fisiere)
+// Creeaza structura districtului (director + symlink + fisiere)
 void setup_district(const char *district_id) {
     struct stat st;
     

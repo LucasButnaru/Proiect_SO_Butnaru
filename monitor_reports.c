@@ -7,23 +7,30 @@
 #include <fcntl.h>
 #include <string.h>
 
-// Variabila globala pentru a tine programul activ
 volatile sig_atomic_t keep_running = 1;
 
-// Handler pentru SIGINT (Ctrl+C)
 void handle_sigint(int sig) {
     keep_running = 0;
-    // Semnalam iesirea
-    write(STDOUT_FILENO, "\n[Monitor] S-a primit SIGINT. Se inchide programul...\n", 55);
+    // Notificam finalizarea
+    write(STDOUT_FILENO, "END: Monitorul se inchide.\n", 27);
 }
 
-// Handler pentru SIGUSR1 (Notificare raport nou)
 void handle_sigusr1(int sig) {
-    write(STDOUT_FILENO, "[Monitor] Notificare: Un nou raport a fost adaugat in sistem!\n", 63);
+    write(STDOUT_FILENO, "MSG: Raport nou adaugat in sistem!\n", 35);
 }
 
 int main() {
-    // Configurarea handler-elor folosind DOAR sigaction() 
+    // Verificam daca ruleaza deja un monitor
+    int check_fd = open(".monitor_pid", O_RDONLY);
+    if (check_fd >= 0) {
+        char pid_buf[32] = {0};
+        read(check_fd, pid_buf, sizeof(pid_buf) - 1);
+        printf("ERR: Un monitor ruleaza deja cu PID-ul %s", pid_buf); // Fara \n ca sa nu se dubleze
+        fflush(stdout); // Obligatoriu pentru a trimite instant pe pipe
+        close(check_fd);
+        return 1;
+    }
+
     struct sigaction sa_int;
     sa_int.sa_handler = handle_sigint;
     sigemptyset(&sa_int.sa_mask);
@@ -33,31 +40,25 @@ int main() {
     struct sigaction sa_usr1;
     sa_usr1.sa_handler = handle_sigusr1;
     sigemptyset(&sa_usr1.sa_mask);
-    sa_usr1.sa_flags = 0; 
+    sa_usr1.sa_flags = 0;
     sigaction(SIGUSR1, &sa_usr1, NULL);
 
-    // Crearea fisierului .monitor_pid și scrierea PID-ului
     int fd = open(".monitor_pid", O_CREAT | O_WRONLY | O_TRUNC, 0644);
-    if (fd < 0) {
-        perror("Eroare la crearea .monitor_pid");
-        return 1;
+    if (fd >= 0) {
+        char pid_str[32];
+        snprintf(pid_str, sizeof(pid_str), "%d\n", getpid());
+        write(fd, pid_str, strlen(pid_str));
+        close(fd);
     }
-    
-    char pid_str[32];
-    snprintf(pid_str, sizeof(pid_str), "%d\n", getpid());
-    write(fd, pid_str, strlen(pid_str));
-    close(fd);
 
-    printf("[Monitor] Pornit cu succes cu PID %d. Astept semnale...\n", getpid());
+    printf("START: Monitor pornit (PID %d)\n", getpid());
+    fflush(stdout);
 
-    // Bucla infinita de asteptare a semnalelor
     while (keep_running) {
-        pause(); // Pune procesul "la somn" pana primeste un semnal (evita consumul de CPU)
+        pause();
     }
 
-    // Cleanup la inchidere (SIGINT)
     unlink(".monitor_pid");
-    printf("[Monitor] Fisierul .monitor_pid a fost sters. La revedere!\n");
     return 0;
 }
 
